@@ -3,19 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Analizador RF</title>
+  <title>Analizador RF Full</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: monospace; user-select: none; }
     body { background: #090b10; color: #e2e8f0; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 14px; }
     .panel { background: #111520; border: 2px solid #00f5d4; border-radius: 16px; padding: 16px; width: 100%; max-width: 400px; }
     .panel.inactivo { border-color: #334155; }
     .header { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 12px; color: #00f5d4; font-weight: bold; }
-    .pantalla { background: #05070a; border: 1px solid #1e293b; border-radius: 8px; height: 170px; margin-bottom: 10px; }
+    .pantalla { background: #05070a; border: 1px solid #1e293b; border-radius: 8px; height: 170px; margin-bottom: 10px; position: relative; }
     canvas { width: 100%; height: 100%; display: block; }
+    .uso { position: absolute; top: 6px; left: 8px; font-size: 10px; color: #94a3b8; background: rgba(5,7,10,0.8); padding: 2px 6px; border-radius: 4px; }
     .datos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 10px; text-align: center; }
     .caja { background: #0f172a; padding: 6px; border-radius: 6px; font-size: 11px; }
     .botones { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
-    button { border: none; border-radius: 8px; padding: 11px; color: #fff; font-weight: bold; font-size: 11px; cursor: pointer; }
+    button { border: none; border-radius: 8px; padding: 11px 6px; color: #fff; font-weight: bold; font-size: 11px; cursor: pointer; }
     .b-tx { background: #e11d48; } .b-off { background: #334155; } .b-ban { background: #0d9488; }
     .b-men { background: #2563eb; } .b-mas { background: #7c3aed; }
     .b-cap { background: #d97706; grid-column: span 2; }
@@ -25,16 +26,16 @@
 </head>
 <body>
   <div class="panel inactivo" id="panel">
-    <div class="header"><span>📡 ANALIZADOR RF</span><span id="msgSave">💾 OK</span></div>
-    <div class="pantalla"><canvas id="cv"></canvas></div>
+    <div class="header"><span>📡 ANALIZADOR RF FULL</span><span id="msgSave">💾 OK</span></div>
+    <div class="pantalla"><div class="uso" id="vUso">USO: RADIO AM</div><canvas id="cv"></canvas></div>
     <div class="datos">
-      <div class="caja">FREQ<br><b id="vFreq">2.40 GHz</b></div>
+      <div class="caja">FREQ<br><b id="vFreq">1.00 MHz</b></div>
       <div class="caja">PICO<br><b id="vDbm">-45 dBm</b></div>
       <div class="caja">GAIN<br><b id="vGain">+10 dB</b></div>
     </div>
     <div class="botones">
       <button class="b-off" id="btnTx" onclick="toggle()">▶ INICIAR</button>
-      <button class="b-ban" id="btnBan" onclick="banda()">📻 WI-FI 2.4G</button>
+      <button class="b-ban" id="btnBan" onclick="banda()">📻 RADIO AM</button>
       <button class="b-men" onclick="gain(-5)">➖ -5 dB</button>
       <button class="b-mas" onclick="gain(5)">➕ +5 dB</button>
       <button class="b-cap" onclick="capturar()">📌 GUARDAR PICO</button>
@@ -43,14 +44,23 @@
     <div class="logs" id="lista"></div>
   </div>
   <script>
-    const KEY = 'rf_pro_v1';
+    const KEY = 'rf_pro_full_v2';
     const BANDAS = [
-      { n: 'WI-FI 2.4G', f: '2.40 GHz' },
-      { n: 'WI-FI 5.8G', f: '5.80 GHz' },
-      { n: '4G LTE', f: '850 MHz' },
-      { n: 'RADIO FM', f: '98.5 MHz' }
+      { n: 'RADIO AM', f: '1.00 MHz', u: 'ONDA MEDIA / LARGA DISTANCIA', a: 600 },
+      { n: 'ONDA CORTA HF', f: '14.2 MHz', u: 'RADIOAFICIONADOS / GLOBAL', a: 1200 },
+      { n: 'RADIO FM', f: '98.5 MHz', u: 'EMISORAS COMERCIALES', a: 1800 },
+      { n: 'AVIACIÓN VHF', f: '121.5 MHz', u: 'TORRE DE CONTROL / VUELOS', a: 900 },
+      { n: 'SATÉLITE NOAA', f: '137.1 MHz', u: 'IMÁGENES METEOROLÓGICAS', a: 1400 },
+      { n: 'WALKIE-TALKIE', f: '446.0 MHz', u: 'UHF / RADIOS DE CAMPO', a: 1000 },
+      { n: '4G LTE', f: '850 MHz', u: 'TELEFONÍA MÓVIL Y DATOS', a: 2500 },
+      { n: 'AVIONES ADS-B', f: '1.09 GHz', u: 'RADAR DE POSICIÓN AÉREA', a: 700 },
+      { n: 'GPS L1', f: '1.57 GHz', u: 'NAVEGACIÓN SATELITAL', a: 3000 },
+      { n: 'WI-FI / BT', f: '2.40 GHz', u: 'REDES INALÁMBRICAS Y BT', a: 3500 },
+      { n: '5G C-BAND', f: '3.50 GHz', u: 'ALTA VELOCIDAD CELULAR 5G', a: 4500 },
+      { n: 'WI-FI 5.8G', f: '5.80 GHz', u: 'DRONES FPV Y ROUTERS 5G', a: 5000 }
     ];
     let st = JSON.parse(localStorage.getItem(KEY)) || { b: 0, g: 10, logs: [] };
+    if (st.b >= BANDAS.length) st.b = 0;
     let on = false, dbm = -45, fase = 0, ctxA = null, oscF = null;
 
     function save() {
@@ -75,7 +85,7 @@
         beep(600, 900, 0.1);
         oscF = ctxA.createOscillator();
         const g = ctxA.createGain();
-        oscF.type = 'sawtooth'; oscF.frequency.value = 60 + st.g;
+        oscF.type = 'sawtooth'; oscF.frequency.value = 55 + st.g + (st.b * 4);
         g.gain.value = 0.04; oscF.connect(g); g.connect(ctxA.destination); oscF.start();
       } else {
         if (oscF) { oscF.stop(); oscF = null; }
@@ -83,9 +93,9 @@
       }
       ui();
     }
-    function banda() { st.b = (st.b + 1) % BANDAS.length; beep(750, null, 0.07); save(); ui(); }
-    function gain(d) { st.g = Math.min(40, Math.max(-20, st.g + d)); if (oscF) oscF.frequency.value = 60 + st.g; beep(750, null, 0.07); save(); ui(); }
-    function capturar() { st.logs.unshift(`${new Date().toLocaleTimeString()} | ${BANDAS[st.b].n} | ${dbm} dBm`); beep(500, 1000, 0.15); save(); ui(); }
+    function banda() { st.b = (st.b + 1) % BANDAS.length; if (oscF) oscF.frequency.value = 55 + st.g + (st.b * 4); beep(750, null, 0.07); save(); ui(); }
+    function gain(d) { st.g = Math.min(40, Math.max(-20, st.g + d)); if (oscF) oscF.frequency.value = 55 + st.g + (st.b * 4); beep(750, null, 0.07); save(); ui(); }
+    function capturar() { st.logs.unshift(`${new Date().toLocaleTimeString()} | ${BANDAS[st.b].n} (${BANDAS[st.b].f}) | ${dbm} dBm`); beep(500, 1000, 0.15); save(); ui(); }
     function limpiar() { localStorage.removeItem(KEY); st = { b: 0, g: 10, logs: [] }; beep(250, 50, 0.2); ui(); }
     function ui() {
       document.getElementById('panel').className = on ? 'panel' : 'panel inactivo';
@@ -93,6 +103,7 @@
       document.getElementById('btnTx').className = on ? 'b-tx' : 'b-off';
       document.getElementById('btnBan').innerText = '📻 ' + BANDAS[st.b].n;
       document.getElementById('vFreq').innerText = BANDAS[st.b].f;
+      document.getElementById('vUso').innerText = 'USO: ' + BANDAS[st.b].u;
       document.getElementById('vGain').innerText = (st.g > 0 ? '+' : '') + st.g + ' dB';
       document.getElementById('lista').innerHTML = st.logs.map(l => `<div>${l}</div>`).join('') || 'Sin datos...';
     }
@@ -106,7 +117,7 @@
         let y = cv.height - 25 - st.g * 0.7;
         if (on) {
           const d = Math.abs(x - cv.width / 2);
-          y -= Math.exp(-(d * d) / 800) * (60 + st.g) + (Math.random() - 0.5) * 12;
+          y -= Math.exp(-(d * d) / BANDAS[st.b].a) * (60 + st.g) + (Math.random() - 0.5) * 12;
           if (y < minY) minY = y;
         }
         x === 0 ? c.moveTo(x, y) : c.lineTo(x, y);
