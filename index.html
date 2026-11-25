@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Analizador RF</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: monospace; user-select: none; }
+    body { background: #090b10; color: #e2e8f0; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 14px; }
+    .panel { background: #111520; border: 2px solid #00f5d4; border-radius: 16px; padding: 16px; width: 100%; max-width: 400px; }
+    .panel.inactivo { border-color: #334155; }
+    .header { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 12px; color: #00f5d4; font-weight: bold; }
+    .pantalla { background: #05070a; border: 1px solid #1e293b; border-radius: 8px; height: 170px; margin-bottom: 10px; }
+    canvas { width: 100%; height: 100%; display: block; }
+    .datos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 10px; text-align: center; }
+    .caja { background: #0f172a; padding: 6px; border-radius: 6px; font-size: 11px; }
+    .botones { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+    button { border: none; border-radius: 8px; padding: 11px; color: #fff; font-weight: bold; font-size: 11px; cursor: pointer; }
+    .b-tx { background: #e11d48; } .b-off { background: #334155; } .b-ban { background: #0d9488; }
+    .b-men { background: #2563eb; } .b-mas { background: #7c3aed; }
+    .b-cap { background: #d97706; grid-column: span 2; }
+    .b-del { background: #1e293b; color: #f87171; grid-column: span 2; }
+    .logs { background: #05070a; border: 1px dashed #334155; padding: 8px; border-radius: 6px; max-height: 85px; overflow-y: auto; font-size: 10px; color: #38bdf8; }
+  </style>
+</head>
+<body>
+  <div class="panel inactivo" id="panel">
+    <div class="header"><span>📡 ANALIZADOR RF</span><span id="msgSave">💾 OK</span></div>
+    <div class="pantalla"><canvas id="cv"></canvas></div>
+    <div class="datos">
+      <div class="caja">FREQ<br><b id="vFreq">2.40 GHz</b></div>
+      <div class="caja">PICO<br><b id="vDbm">-45 dBm</b></div>
+      <div class="caja">GAIN<br><b id="vGain">+10 dB</b></div>
+    </div>
+    <div class="botones">
+      <button class="b-off" id="btnTx" onclick="toggle()">▶ INICIAR</button>
+      <button class="b-ban" id="btnBan" onclick="banda()">📻 WI-FI 2.4G</button>
+      <button class="b-men" onclick="gain(-5)">➖ -5 dB</button>
+      <button class="b-mas" onclick="gain(5)">➕ +5 dB</button>
+      <button class="b-cap" onclick="capturar()">📌 GUARDAR PICO</button>
+      <button class="b-del" onclick="limpiar()">🗑️ BORRAR MEMORIA</button>
+    </div>
+    <div class="logs" id="lista"></div>
+  </div>
+  <script>
+    const KEY = 'rf_pro_v1';
+    const BANDAS = [
+      { n: 'WI-FI 2.4G', f: '2.40 GHz' },
+      { n: 'WI-FI 5.8G', f: '5.80 GHz' },
+      { n: '4G LTE', f: '850 MHz' },
+      { n: 'RADIO FM', f: '98.5 MHz' }
+    ];
+    let st = JSON.parse(localStorage.getItem(KEY)) || { b: 0, g: 10, logs: [] };
+    let on = false, dbm = -45, fase = 0, ctxA = null, oscF = null;
+
+    function save() {
+      localStorage.setItem(KEY, JSON.stringify(st));
+      document.getElementById('msgSave').innerText = '💾 GUARDADO';
+      setTimeout(() => document.getElementById('msgSave').innerText = '💾 OK', 800);
+    }
+    function beep(f1, f2, t) {
+      if (!ctxA) ctxA = new (window.AudioContext || window.webkitAudioContext)();
+      if (ctxA.state === 'suspended') ctxA.resume();
+      const o = ctxA.createOscillator(), g = ctxA.createGain();
+      o.frequency.setValueAtTime(f1, ctxA.currentTime);
+      if (f2) o.frequency.exponentialRampToValueAtTime(f2, ctxA.currentTime + t);
+      g.gain.setValueAtTime(0.1, ctxA.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.01, ctxA.currentTime + t);
+      o.connect(g); g.connect(ctxA.destination);
+      o.start(); o.stop(ctxA.currentTime + t);
+    }
+    function toggle() {
+      on = !on;
+      if (on) {
+        beep(600, 900, 0.1);
+        oscF = ctxA.createOscillator();
+        const g = ctxA.createGain();
+        oscF.type = 'sawtooth'; oscF.frequency.value = 60 + st.g;
+        g.gain.value = 0.04; oscF.connect(g); g.connect(ctxA.destination); oscF.start();
+      } else {
+        if (oscF) { oscF.stop(); oscF = null; }
+        beep(300, 50, 0.2);
+      }
+      ui();
+    }
+    function banda() { st.b = (st.b + 1) % BANDAS.length; beep(750, null, 0.07); save(); ui(); }
+    function gain(d) { st.g = Math.min(40, Math.max(-20, st.g + d)); if (oscF) oscF.frequency.value = 60 + st.g; beep(750, null, 0.07); save(); ui(); }
+    function capturar() { st.logs.unshift(`${new Date().toLocaleTimeString()} | ${BANDAS[st.b].n} | ${dbm} dBm`); beep(500, 1000, 0.15); save(); ui(); }
+    function limpiar() { localStorage.removeItem(KEY); st = { b: 0, g: 10, logs: [] }; beep(250, 50, 0.2); ui(); }
+    function ui() {
+      document.getElementById('panel').className = on ? 'panel' : 'panel inactivo';
+      document.getElementById('btnTx').innerText = on ? '⏹ DETENER' : '▶ INICIAR';
+      document.getElementById('btnTx').className = on ? 'b-tx' : 'b-off';
+      document.getElementById('btnBan').innerText = '📻 ' + BANDAS[st.b].n;
+      document.getElementById('vFreq').innerText = BANDAS[st.b].f;
+      document.getElementById('vGain').innerText = (st.g > 0 ? '+' : '') + st.g + ' dB';
+      document.getElementById('lista').innerHTML = st.logs.map(l => `<div>${l}</div>`).join('') || 'Sin datos...';
+    }
+    const cv = document.getElementById('cv'), c = cv.getContext('2d');
+    function loop() {
+      cv.width = cv.offsetWidth; cv.height = cv.offsetHeight;
+      c.fillStyle = '#05070a'; c.fillRect(0, 0, cv.width, cv.height);
+      c.beginPath(); c.strokeStyle = on ? '#00f5d4' : '#475569'; c.lineWidth = 2;
+      let minY = cv.height;
+      for (let x = 0; x < cv.width; x++) {
+        let y = cv.height - 25 - st.g * 0.7;
+        if (on) {
+          const d = Math.abs(x - cv.width / 2);
+          y -= Math.exp(-(d * d) / 800) * (60 + st.g) + (Math.random() - 0.5) * 12;
+          if (y < minY) minY = y;
+        }
+        x === 0 ? c.moveTo(x, y) : c.lineTo(x, y);
+      }
+      c.stroke();
+      if (on) { fase += 0.2; dbm = Math.round(-95 + ((cv.height - minY) / cv.height) * 85); document.getElementById('vDbm').innerText = dbm + ' dBm'; }
+      requestAnimationFrame(loop);
+    }
+    ui(); loop();
+  </script>
+</body>
+</html>
